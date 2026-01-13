@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<Academia>
+    <Asignatura media_clase="5,20" nombre="interfaces">
+        <Alumno apellido="polo" nombre="astrid">
+            <T1>5.0</T1>
+            <T2>5.0</T2>
+            <T3>5.0</T3>
+            <Parcial>5.0</Parcial>
+            <Final>6.0</Final>
+            <PromedioIndividual>5,20</PromedioIndividual>
+        </Alumno>
+    </Asignatura>
+</Academia>
