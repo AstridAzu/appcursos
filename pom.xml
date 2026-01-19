@@ -48,6 +48,13 @@
             <artifactId>io</artifactId>
             <version>8.0.2</version>
         </dependency>
+
+        <!-- JFreeChart para Gráficos -->
+        <dependency>
+            <groupId>org.jfree</groupId>
+            <artifactId>jfreechart</artifactId>
+            <version>1.5.4</version>
+        </dependency>
     </dependencies>
 
     <build>

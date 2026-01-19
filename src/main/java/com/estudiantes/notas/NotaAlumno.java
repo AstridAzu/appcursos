@@ -64,6 +64,35 @@ public class NotaAlumno {
         return notaFinal;
     }
 
+    // Setters
+    public void setNombreAlumno(String nombreAlumno) {
+        this.nombreAlumno = nombreAlumno;
+    }
+
+    public void setApellidoAlumno(String apellidoAlumno) {
+        this.apellidoAlumno = apellidoAlumno;
+    }
+
+    public void setT1(double t1) {
+        this.t1 = t1;
+    }
+
+    public void setT2(double t2) {
+        this.t2 = t2;
+    }
+
+    public void setT3(double t3) {
+        this.t3 = t3;
+    }
+
+    public void setParcial(double parcial) {
+        this.parcial = parcial;
+    }
+
+    public void setNotaFinal(double notaFinal) {
+        this.notaFinal = notaFinal;
+    }
+
     /**
      * Calcula el promedio ponderado del cuatrimestre.
      * Fórmula: (T1 + T2 + T3 + Parcial + Final) / 5

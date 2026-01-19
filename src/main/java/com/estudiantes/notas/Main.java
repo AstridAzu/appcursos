@@ -10,8 +10,22 @@ import org.eclipse.swt.widgets.*;
 
 import java.util.*;
 import java.util.List;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import javax.imageio.ImageIO;
 import java.text.SimpleDateFormat;
+
+// Imports de JFreeChart
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.MultiplePiePlot;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.data.category.DefaultCategoryDataset;
+import org.jfree.data.general.DefaultPieDataset;
+import org.jfree.chart.util.TableOrder;
 
 // Imports de iText 7 para PDF Profesional
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -21,6 +35,8 @@ import com.itextpdf.layout.element.Paragraph;
 import com.itextpdf.layout.element.Table;
 import com.itextpdf.layout.element.Cell;
 import com.itextpdf.layout.element.AreaBreak;
+import com.itextpdf.layout.element.Image;
+import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.layout.properties.UnitValue;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.VerticalAlignment;
@@ -197,19 +213,31 @@ public class Main {
         btnExportarPDF.setText("Descargar PDF");
         btnExportarPDF.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
+        Button btnEditar = new Button(compositeButtons, SWT.PUSH);
+        btnEditar.setText("Editar Seleccionado");
+        btnEditar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        Button btnEliminar = new Button(compositeButtons, SWT.PUSH);
+        btnEliminar.setText("Eliminar Seleccionado");
+        btnEliminar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        Button btnGrafico = new Button(compositeButtons, SWT.PUSH);
+        btnGrafico.setText("Ver Gráfico");
+        btnGrafico.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
         Text txtInforme = new Text(shell, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL);
         txtInforme.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         txtInforme.setEditable(false);
 
         // --- ASOCIACIÓN DE EVENTOS ---
-        setupEventListeners(shell, table, combo, txtNom, txtApe, t1, t2, t3, parc, fin, txtNewAsig, btnGenerar, btnExportarPDF, btnAddNota, txtInforme);
+        setupEventListeners(shell, table, combo, txtNom, txtApe, t1, t2, t3, parc, fin, txtNewAsig, btnGenerar, btnExportarPDF, btnEditar, btnEliminar, btnGrafico, btnAddNota, txtInforme);
 
         return txtInforme;
     }
 
     private static void setupEventListeners(Shell shell, org.eclipse.swt.widgets.Table table, Combo combo, 
                                           Text txtNom, Text txtApe, Text t1, Text t2, Text t3, Text parc, Text fin, 
-                                          Text txtNewAsig, Button btnGen, Button btnPdf, Button btnAdd, Text txtInf) {
+                                          Text txtNewAsig, Button btnGen, Button btnPdf, Button btnEdit, Button btnDel, Button btnGraf, Button btnAdd, Text txtInf) {
         
         // Listener para añadir asignatura
         // Buscamos el botón de la asignatura - Por refactorización lo capturamos del parent
@@ -226,27 +254,140 @@ public class Main {
             }
         });
 
+        final org.eclipse.swt.widgets.TableItem[] itemParaEditar = { null };
+
         btnAdd.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
                 int index = combo.getSelectionIndex();
-                if (index == -1) return;
+                if (index == -1) {
+                    MessageBox mb = new MessageBox(shell, SWT.ICON_WARNING);
+                    mb.setMessage("Por favor seleccione una asignatura");
+                    mb.open();
+                    return;
+                }
                 try {
-                    NotaAlumno nota = new NotaAlumno(txtNom.getText(), txtApe.getText(),
-                            Double.parseDouble(t1.getText()), Double.parseDouble(t2.getText()),
-                            Double.parseDouble(t3.getText()), Double.parseDouble(parc.getText()),
-                            Double.parseDouble(fin.getText()));
+                    String nombre = txtNom.getText();
+                    String apellido = txtApe.getText();
+                    double t1Val = Double.parseDouble(t1.getText());
+                    double t2Val = Double.parseDouble(t2.getText());
+                    double t3Val = Double.parseDouble(t3.getText());
+                    double parcVal = Double.parseDouble(parc.getText());
+                    double finVal = Double.parseDouble(fin.getText());
 
                     Asignatura seleccionada = listaAsignaturas.get(index);
-                    seleccionada.agregarNota(nota);
 
-                    org.eclipse.swt.widgets.TableItem item = new org.eclipse.swt.widgets.TableItem(table, SWT.NONE);
-                    item.setText(new String[]{seleccionada.getNombre(), nota.getNombreAlumno(),
-                            t1.getText(), t2.getText(), t3.getText(),
-                            parc.getText(), fin.getText(), String.format("%.2f", nota.getPromedioCuatrimestre())});
+                    if (itemParaEditar[0] != null) {
+                        // Modo edición
+                        Object[] data = (Object[]) itemParaEditar[0].getData();
+                        Asignatura asigAntigua = (Asignatura) data[0];
+                        NotaAlumno notaExistente = (NotaAlumno) data[1];
+
+                        // Si cambió la asignatura, removemos de la antigua y añadimos a la nueva
+                        if (asigAntigua != seleccionada) {
+                            asigAntigua.getNotas().remove(notaExistente);
+                            seleccionada.agregarNota(notaExistente);
+                        }
+
+                        // Actualizamos los datos del objeto nota
+                        updateNota(notaExistente, nombre, apellido, t1Val, t2Val, t3Val, parcVal, finVal);
+
+                        // Actualizamos la fila en la tabla
+                        itemParaEditar[0].setText(new String[]{seleccionada.getNombre(), nombre,
+                                t1.getText(), t2.getText(), t3.getText(),
+                                parc.getText(), fin.getText(), String.format("%.2f", notaExistente.getPromedioCuatrimestre())});
+                        
+                        itemParaEditar[0].setData(new Object[]{seleccionada, notaExistente});
+                        
+                        btnAdd.setText("Registrar Calificaciones");
+                        itemParaEditar[0] = null;
+                        
+                    } else {
+                        // Modo creación
+                        NotaAlumno nota = new NotaAlumno(nombre, apellido, t1Val, t2Val, t3Val, parcVal, finVal);
+                        seleccionada.agregarNota(nota);
+
+                        org.eclipse.swt.widgets.TableItem item = new org.eclipse.swt.widgets.TableItem(table, SWT.NONE);
+                        item.setText(new String[]{seleccionada.getNombre(), nota.getNombreAlumno(),
+                                t1.getText(), t2.getText(), t3.getText(),
+                                parc.getText(), fin.getText(), String.format("%.2f", nota.getPromedioCuatrimestre())});
+                        item.setData(new Object[]{seleccionada, nota});
+                    }
+
+                    // Limpiar campos
+                    txtNom.setText(""); txtApe.setText(""); t1.setText(""); t2.setText(""); t3.setText(""); parc.setText(""); fin.setText("");
 
                 } catch (Exception ex) {
-                    System.out.println("Error en datos");
+                    MessageBox mb = new MessageBox(shell, SWT.ICON_ERROR);
+                    mb.setMessage("Error en los datos ingresados: " + ex.getMessage());
+                    mb.open();
+                }
+            }
+        });
+
+        btnEdit.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                int index = table.getSelectionIndex();
+                if (index == -1) {
+                    MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION);
+                    mb.setMessage("Seleccione una fila de la tabla para editar");
+                    mb.open();
+                    return;
+                }
+                
+                org.eclipse.swt.widgets.TableItem item = table.getItem(index);
+                itemParaEditar[0] = item;
+                Object[] data = (Object[]) item.getData();
+                Asignatura asig = (Asignatura) data[0];
+                NotaAlumno nota = (NotaAlumno) data[1];
+
+                // Llenar los campos
+                for (int i = 0; i < combo.getItemCount(); i++) {
+                    if (combo.getItem(i).equals(asig.getNombre())) {
+                        combo.select(i);
+                        break;
+                    }
+                }
+                txtNom.setText(nota.getNombreAlumno());
+                txtApe.setText(nota.getApellidoAlumno());
+                t1.setText(String.valueOf(nota.getT1()));
+                t2.setText(String.valueOf(nota.getT2()));
+                t3.setText(String.valueOf(nota.getT3()));
+                parc.setText(String.valueOf(nota.getParcial()));
+                fin.setText(String.valueOf(nota.getNotaFinal()));
+
+                btnAdd.setText("Actualizar Calificaciones");
+            }
+        });
+
+        btnDel.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                int index = table.getSelectionIndex();
+                if (index == -1) {
+                    MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION);
+                    mb.setMessage("Seleccione una fila de la tabla para eliminar");
+                    mb.open();
+                    return;
+                }
+
+                MessageBox confirm = new MessageBox(shell, SWT.ICON_QUESTION | SWT.YES | SWT.NO);
+                confirm.setMessage("¿Está seguro de que desea eliminar esta nota?");
+                if (confirm.open() == SWT.YES) {
+                    org.eclipse.swt.widgets.TableItem item = table.getItem(index);
+                    Object[] data = (Object[]) item.getData();
+                    Asignatura asig = (Asignatura) data[0];
+                    NotaAlumno nota = (NotaAlumno) data[1];
+
+                    asig.getNotas().remove(nota);
+                    table.remove(index);
+                    
+                    if (itemParaEditar[0] == item) {
+                        itemParaEditar[0] = null;
+                        btnAdd.setText("Registrar Calificaciones");
+                        txtNom.setText(""); txtApe.setText(""); t1.setText(""); t2.setText(""); t3.setText(""); parc.setText(""); fin.setText("");
+                    }
                 }
             }
         });
@@ -262,6 +403,19 @@ public class Main {
             @Override
             public void widgetSelected(SelectionEvent e) {
                 if (!listaAsignaturas.isEmpty()) guardarComoPDF(listaAsignaturas, shell);
+            }
+        });
+
+        btnGraf.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                if (listaAsignaturas.isEmpty()) {
+                    MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION);
+                    mb.setMessage("No hay datos para mostrar el gráfico");
+                    mb.open();
+                    return;
+                }
+                mostrarGrafico(shell);
             }
         });
     }
@@ -300,7 +454,9 @@ public class Main {
                     .setTextAlignment(TextAlignment.CENTER));
             documento.add(new Paragraph("2. Reporte Individual por Estudiante ........................ Pág. 2")
                     .setTextAlignment(TextAlignment.CENTER));
-            documento.add(new Paragraph("3. Auditoría y Resumen General .............................. Pág. X")
+            documento.add(new Paragraph("3. Estadísticas Visuales ................................... Pág. 3")
+                    .setTextAlignment(TextAlignment.CENTER));
+            documento.add(new Paragraph("4. Auditoría y Resumen General .............................. Pág. X")
                     .setTextAlignment(TextAlignment.CENTER));
             documento.add(new AreaBreak());
 
@@ -386,8 +542,36 @@ public class Main {
 
             documento.add(new AreaBreak());
 
-            // 4. SECCIÓN: AUDITORÍA Y RESUMEN GENERAL
-            documento.add(new Paragraph("3. AUDITORÍA Y RESUMEN GENERAL")
+            // 4. SECCIÓN: ESTADÍSTICAS VISUALES
+            documento.add(new Paragraph("3. ESTADÍSTICAS VISUALES (RENDIMIENTO)")
+                    .setBold().setFontSize(14).setFontColor(azulOscuro));
+            documento.add(new Paragraph("Desglose de aprobados y reprobados por cada curso registrado.\n\n"));
+
+            DefaultCategoryDataset datasetMultiple = new DefaultCategoryDataset();
+            for (Asignatura asig : asignaturas) {
+                long apr = asig.getNotas().stream().filter(n -> n.getPromedioCuatrimestre() >= 7.0).count();
+                long repr = asig.getNotas().size() - apr;
+                datasetMultiple.addValue(apr, "Aprobados", asig.getNombre());
+                datasetMultiple.addValue(repr, "No Aprobados", asig.getNombre());
+            }
+
+            JFreeChart multipleChart = ChartFactory.createMultiplePieChart(
+                    "Balance por Asignatura",
+                    datasetMultiple,
+                    TableOrder.BY_COLUMN,
+                    true, true, false);
+
+            BufferedImage chartImage = multipleChart.createBufferedImage(500, 400);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(chartImage, "png", baos);
+            Image itextImage = new Image(ImageDataFactory.create(baos.toByteArray()));
+            itextImage.setHorizontalAlignment(com.itextpdf.layout.properties.HorizontalAlignment.CENTER);
+            documento.add(itextImage);
+
+            documento.add(new AreaBreak());
+
+            // 5. SECCIÓN: AUDITORÍA Y RESUMEN GENERAL
+            documento.add(new Paragraph("4. AUDITORÍA Y RESUMEN GENERAL")
                     .setBold().setFontSize(14).setFontColor(azulOscuro));
             
             List<String> alumnosBien = new ArrayList<>();
@@ -433,6 +617,57 @@ public class Main {
             MessageBox mb = new MessageBox(shell, SWT.ICON_ERROR);
             mb.setMessage("Error al generar el PDF: " + e.getMessage());
             mb.open();
+        }
+    }
+
+    private static void updateNota(NotaAlumno nota, String nom, String ape, double t1, double t2, double t3, double parc, double fin) {
+        nota.setNombreAlumno(nom);
+        nota.setApellidoAlumno(ape);
+        nota.setT1(t1);
+        nota.setT2(t2);
+        nota.setT3(t3);
+        nota.setParcial(parc);
+        nota.setNotaFinal(fin);
+    }
+
+    private static void mostrarGrafico(Shell parent) {
+        Shell shellGrafico = new Shell(parent, SWT.DIALOG_TRIM | SWT.RESIZE | SWT.MAX);
+        shellGrafico.setText("Rendimiento por Asignatura");
+        shellGrafico.setLayout(new GridLayout(1, false));
+        shellGrafico.setSize(800, 600);
+
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+
+        for (Asignatura asig : listaAsignaturas) {
+            long aprobados = asig.getNotas().stream().filter(n -> n.getPromedioCuatrimestre() >= 7.0).count();
+            long reprobados = asig.getNotas().size() - aprobados;
+
+            dataset.addValue(aprobados, "Aprobados", asig.getNombre());
+            dataset.addValue(reprobados, "No Aprobados", asig.getNombre());
+        }
+
+        // Creamos un gráfico múltiple que genera un Pay (Pie) por cada columna (Asignatura)
+        JFreeChart multiplePieChart = ChartFactory.createMultiplePieChart(
+                "Distribución de Notas por Curso",
+                dataset,
+                TableOrder.BY_COLUMN,
+                true, true, false);
+
+        try {
+            BufferedImage bufferedImage = multiplePieChart.createBufferedImage(750, 500);
+            ByteArrayOutputStream os = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", os);
+            org.eclipse.swt.graphics.Image image = new org.eclipse.swt.graphics.Image(parent.getDisplay(), new ByteArrayInputStream(os.toByteArray()));
+
+            Label labelGrafico = new Label(shellGrafico, SWT.NONE);
+            labelGrafico.setImage(image);
+            labelGrafico.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, true));
+
+            shellGrafico.addDisposeListener(e -> image.dispose());
+            
+            shellGrafico.open();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
