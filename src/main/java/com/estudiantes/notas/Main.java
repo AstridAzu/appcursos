@@ -3,7 +3,7 @@ package com.estudiantes.notas;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
-import org.eclipse.swt.graphics.Font;
+import org.eclipse.swt.graphics.*;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.*;
@@ -23,6 +23,11 @@ import org.jfree.chart.ChartFactory;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.plot.MultiplePiePlot;
 import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.plot.CategoryPlot;
+import org.jfree.chart.plot.PiePlot;
+import org.jfree.chart.renderer.category.BarRenderer;
+import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.labels.StandardCategoryItemLabelGenerator;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.jfree.data.general.DefaultPieDataset;
 import org.jfree.chart.util.TableOrder;
@@ -75,6 +80,9 @@ public class Main {
         shell.setText("Gestión Académica - Reportes en PDF");
         shell.setSize(700, 800);
         shell.setLayout(new GridLayout(1, false));
+
+        // --- 0. SECCIÓN: AYUDA ---
+        createHelpSection(shell);
 
         // --- REFERENCIAS A WIDGETS ---
         final Combo comboAsignaturas;
@@ -221,23 +229,28 @@ public class Main {
         btnEliminar.setText("Eliminar Seleccionado");
         btnEliminar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        Button btnGrafico = new Button(compositeButtons, SWT.PUSH);
-        btnGrafico.setText("Ver Gráfico");
-        btnGrafico.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        Button btnGraficoBarras = new Button(compositeButtons, SWT.PUSH);
+        btnGraficoBarras.setText("Gráfico de Barras");
+        btnGraficoBarras.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        Button btnGraficoCircular = new Button(compositeButtons, SWT.PUSH);
+        btnGraficoCircular.setText("Gráfico Circular");
+        btnGraficoCircular.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         Text txtInforme = new Text(shell, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL);
         txtInforme.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         txtInforme.setEditable(false);
 
         // --- ASOCIACIÓN DE EVENTOS ---
-        setupEventListeners(shell, table, combo, txtNom, txtApe, t1, t2, t3, parc, fin, txtNewAsig, btnGenerar, btnExportarPDF, btnEditar, btnEliminar, btnGrafico, btnAddNota, txtInforme);
+        setupEventListeners(shell, table, combo, txtNom, txtApe, t1, t2, t3, parc, fin, txtNewAsig, btnGenerar, btnExportarPDF, btnEditar, btnEliminar, btnGraficoBarras, btnGraficoCircular, btnAddNota, txtInforme);
 
         return txtInforme;
     }
 
     private static void setupEventListeners(Shell shell, org.eclipse.swt.widgets.Table table, Combo combo, 
                                           Text txtNom, Text txtApe, Text t1, Text t2, Text t3, Text parc, Text fin, 
-                                          Text txtNewAsig, Button btnGen, Button btnPdf, Button btnEdit, Button btnDel, Button btnGraf, Button btnAdd, Text txtInf) {
+                                          Text txtNewAsig, Button btnGen, Button btnPdf, Button btnEdit, Button btnDel, 
+                                          Button btnGrafBar, Button btnGrafPie, Button btnAdd, Text txtInf) {
         
         // Listener para añadir asignatura
         // Buscamos el botón de la asignatura - Por refactorización lo capturamos del parent
@@ -406,7 +419,7 @@ public class Main {
             }
         });
 
-        btnGraf.addSelectionListener(new SelectionAdapter() {
+        btnGrafBar.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
                 if (listaAsignaturas.isEmpty()) {
@@ -415,7 +428,20 @@ public class Main {
                     mb.open();
                     return;
                 }
-                mostrarGrafico(shell);
+                mostrarGraficoBarras(shell);
+            }
+        });
+
+        btnGrafPie.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                if (listaAsignaturas.isEmpty()) {
+                    MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION);
+                    mb.setMessage("No hay datos para mostrar el gráfico");
+                    mb.open();
+                    return;
+                }
+                mostrarGraficoCircular(shell);
             }
         });
     }
@@ -545,23 +571,43 @@ public class Main {
             // 4. SECCIÓN: ESTADÍSTICAS VISUALES
             documento.add(new Paragraph("3. ESTADÍSTICAS VISUALES (RENDIMIENTO)")
                     .setBold().setFontSize(14).setFontColor(azulOscuro));
-            documento.add(new Paragraph("Desglose de aprobados y reprobados por cada curso registrado.\n\n"));
+            documento.add(new Paragraph("Desglose académico por categorías de rendimiento.\n\n"));
 
             DefaultCategoryDataset datasetMultiple = new DefaultCategoryDataset();
-            for (Asignatura asig : asignaturas) {
-                long apr = asig.getNotas().stream().filter(n -> n.getPromedioCuatrimestre() >= 7.0).count();
-                long repr = asig.getNotas().size() - apr;
-                datasetMultiple.addValue(apr, "Aprobados", asig.getNombre());
-                datasetMultiple.addValue(repr, "No Aprobados", asig.getNombre());
-            }
+            llenarDatasetCategorias(datasetMultiple, asignaturas);
 
+            // 3.1 Gráfico de Barras
+            documento.add(new Paragraph("3.1 Comparativa de Rendimiento (Barras)").setBold().setFontSize(12));
+            JFreeChart barChart = ChartFactory.createBarChart(
+                    "Distribución por Materias",
+                    "Asignaturas",
+                    "Cantidad de Alumnos",
+                    datasetMultiple,
+                    PlotOrientation.VERTICAL,
+                    true, true, false);
+            
+            configurarColoresBarras(barChart);
+
+            BufferedImage barImage = barChart.createBufferedImage(500, 300);
+            ByteArrayOutputStream baosBar = new ByteArrayOutputStream();
+            ImageIO.write(barImage, "png", baosBar);
+            Image itextBarImage = new Image(ImageDataFactory.create(baosBar.toByteArray()));
+            itextBarImage.setHorizontalAlignment(com.itextpdf.layout.properties.HorizontalAlignment.CENTER);
+            documento.add(itextBarImage);
+
+            documento.add(new Paragraph("\n"));
+
+            // 3.2 Gráfico Circular (Múltiple)
+            documento.add(new Paragraph("3.2 Composición Porcentual (Circular)").setBold().setFontSize(12));
             JFreeChart multipleChart = ChartFactory.createMultiplePieChart(
-                    "Balance por Asignatura",
+                    "Balance Académico",
                     datasetMultiple,
                     TableOrder.BY_COLUMN,
                     true, true, false);
+            
+            configurarColoresCircular(multipleChart);
 
-            BufferedImage chartImage = multipleChart.createBufferedImage(500, 400);
+            BufferedImage chartImage = multipleChart.createBufferedImage(500, 350);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ImageIO.write(chartImage, "png", baos);
             Image itextImage = new Image(ImageDataFactory.create(baos.toByteArray()));
@@ -588,7 +634,7 @@ public class Main {
                 }
                 double mediaAlumno = suma / entry.getValue().size();
                 if (mediaAlumno >= 7.0) alumnosBien.add(entry.getKey());
-                else alumnosMal.add(entry.getKey());
+                else if (mediaAlumno < 5.0) alumnosMal.add(entry.getKey());
             }
 
             documento.add(new Paragraph("Estadísticas de Población Estudiantil:").setBold().setMarginTop(10));
@@ -598,13 +644,13 @@ public class Main {
             tablaResumen.addCell(new Cell().add(new Paragraph("Total Alumnos:")));
             tablaResumen.addCell(new Cell().add(new Paragraph(String.valueOf(datosAlumnos.size()))));
             tablaResumen.addCell(new Cell().add(new Paragraph("Promedio General Sistema:")));
-            tablaResumen.addCell(new Cell().add(new Paragraph(String.format("%.2f", sumaGlobal/totalRegistros))));
+            tablaResumen.addCell(new Cell().add(new Paragraph(totalRegistros > 0 ? String.format("%.2f", sumaGlobal/totalRegistros) : "0.00")));
             documento.add(tablaResumen);
 
-            documento.add(new Paragraph("\nAlumnos con Rendimiento Satisfactorio (BIEN):").setBold().setFontColor(new DeviceRgb(0, 100, 0)));
+            documento.add(new Paragraph("\nAlumnos con Rendimiento Destacado (Notable/Sobresaliente):").setBold().setFontColor(new DeviceRgb(0, 100, 0)));
             documento.add(new Paragraph(alumnosBien.isEmpty() ? "Ninguno" : String.join(", ", alumnosBien)).setFontSize(10));
 
-            documento.add(new Paragraph("\nAlumnos en Situación de Riesgo (MAL):").setBold().setFontColor(new DeviceRgb(150, 0, 0)));
+            documento.add(new Paragraph("\nAlumnos en Situación Crítica (Suspenso):").setBold().setFontColor(new DeviceRgb(150, 0, 0)));
             documento.add(new Paragraph(alumnosMal.isEmpty() ? "Ninguno" : String.join(", ", alumnosMal)).setFontSize(10));
 
             documento.close();
@@ -630,28 +676,124 @@ public class Main {
         nota.setNotaFinal(fin);
     }
 
-    private static void mostrarGrafico(Shell parent) {
+    /**
+     * Crea un botón de ayuda con un menú desplegable.
+     */
+    private static void createHelpSection(Shell shell) {
+        Composite compositeHelp = new Composite(shell, SWT.NONE);
+        compositeHelp.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        compositeHelp.setLayout(new GridLayout(1, false));
+
+        Button btnHelp = new Button(compositeHelp, SWT.PUSH);
+        // Usamos un icono de sistema para la ayuda
+        btnHelp.setImage(shell.getDisplay().getSystemImage(SWT.ICON_QUESTION));
+        btnHelp.setToolTipText("Menú de Ayuda");
+        btnHelp.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
+
+        // Menú desplegable
+        Menu helpMenu = new Menu(shell, SWT.POP_UP);
+
+        MenuItem aboutItem = new MenuItem(helpMenu, SWT.PUSH);
+        aboutItem.setText("Acerca de");
+        aboutItem.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION);
+                mb.setText("Acerca de");
+                mb.setMessage("Sistema de Gestión Académica\nHerramienta integral para el seguimiento de notas y generación de reportes.");
+                mb.open();
+            }
+        });
+
+        MenuItem versionItem = new MenuItem(helpMenu, SWT.PUSH);
+        versionItem.setText("Versión");
+        versionItem.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION);
+                mb.setText("Versión");
+                mb.setMessage("Sistema v1.2.0 - Stable Release");
+                mb.open();
+            }
+        });
+
+        MenuItem guideItem = new MenuItem(helpMenu, SWT.PUSH);
+        guideItem.setText("Guía de Usuario");
+        guideItem.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION);
+                mb.setText("Guía de Usuario");
+                mb.setMessage("Pasos rápidos:\n1. Use 'Definir Asignaturas' para crear materias.\n2. 'Registrar Notas' para añadir alumnos y sus calificaciones.\n3. 'Ver en Pantalla' para previsualizar el informe.\n4. 'Descargar PDF' para generar el documento profesional.");
+                mb.open();
+            }
+        });
+
+        // Mostrar el menú al hacer clic en el botón
+        btnHelp.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                org.eclipse.swt.graphics.Rectangle rect = btnHelp.getBounds();
+                org.eclipse.swt.graphics.Point pt = new org.eclipse.swt.graphics.Point(rect.x, rect.y + rect.height);
+                pt = btnHelp.getParent().toDisplay(pt);
+                helpMenu.setLocation(pt.x, pt.y);
+                helpMenu.setVisible(true);
+            }
+        });
+    }
+
+    private static void mostrarGraficoBarras(Shell parent) {
         Shell shellGrafico = new Shell(parent, SWT.DIALOG_TRIM | SWT.RESIZE | SWT.MAX);
-        shellGrafico.setText("Rendimiento por Asignatura");
+        shellGrafico.setText("Rendimiento por Asignatura (Barras)");
         shellGrafico.setLayout(new GridLayout(1, false));
         shellGrafico.setSize(800, 600);
 
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        llenarDatasetCategorias(dataset, listaAsignaturas);
 
-        for (Asignatura asig : listaAsignaturas) {
-            long aprobados = asig.getNotas().stream().filter(n -> n.getPromedioCuatrimestre() >= 7.0).count();
-            long reprobados = asig.getNotas().size() - aprobados;
+        JFreeChart barChart = ChartFactory.createBarChart(
+                "Distribución de Calificaciones",
+                "Asignaturas",
+                "Cantidad de Alumnos",
+                dataset,
+                PlotOrientation.VERTICAL,
+                true, true, false);
+        
+        configurarColoresBarras(barChart);
 
-            dataset.addValue(aprobados, "Aprobados", asig.getNombre());
-            dataset.addValue(reprobados, "No Aprobados", asig.getNombre());
+        try {
+            BufferedImage bufferedImage = barChart.createBufferedImage(750, 500);
+            ByteArrayOutputStream os = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "png", os);
+            org.eclipse.swt.graphics.Image image = new org.eclipse.swt.graphics.Image(parent.getDisplay(), new ByteArrayInputStream(os.toByteArray()));
+
+            Label labelGrafico = new Label(shellGrafico, SWT.NONE);
+            labelGrafico.setImage(image);
+            labelGrafico.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, true));
+
+            shellGrafico.addDisposeListener(e -> image.dispose());
+            shellGrafico.open();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+    }
 
-        // Creamos un gráfico múltiple que genera un Pay (Pie) por cada columna (Asignatura)
+    private static void mostrarGraficoCircular(Shell parent) {
+        Shell shellGrafico = new Shell(parent, SWT.DIALOG_TRIM | SWT.RESIZE | SWT.MAX);
+        shellGrafico.setText("Rendimiento por Asignatura (Circular)");
+        shellGrafico.setLayout(new GridLayout(1, false));
+        shellGrafico.setSize(800, 600);
+
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        llenarDatasetCategorias(dataset, listaAsignaturas);
+
         JFreeChart multiplePieChart = ChartFactory.createMultiplePieChart(
-                "Distribución de Notas por Curso",
+                "Distribución Detallada por Asignatura",
                 dataset,
                 TableOrder.BY_COLUMN,
                 true, true, false);
+
+        configurarColoresCircular(multiplePieChart);
 
         try {
             BufferedImage bufferedImage = multiplePieChart.createBufferedImage(750, 500);
@@ -668,6 +810,59 @@ public class Main {
             shellGrafico.open();
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    private static void llenarDatasetCategorias(DefaultCategoryDataset dataset, List<Asignatura> asignaturas) {
+        for (Asignatura asig : asignaturas) {
+            long sob = asig.getNotas().stream().filter(n -> n.getPromedioCuatrimestre() >= 9.0).count();
+            long not = asig.getNotas().stream().filter(n -> n.getPromedioCuatrimestre() >= 7.0 && n.getPromedioCuatrimestre() < 9.0).count();
+            long apr = asig.getNotas().stream().filter(n -> n.getPromedioCuatrimestre() >= 5.0 && n.getPromedioCuatrimestre() < 7.0).count();
+            long sus = asig.getNotas().stream().filter(n -> n.getPromedioCuatrimestre() < 5.0).count();
+
+            dataset.addValue(sob, "Sobresaliente", asig.getNombre());
+            dataset.addValue(not, "Notable", asig.getNombre());
+            dataset.addValue(apr, "Aprobado", asig.getNombre());
+            dataset.addValue(sus, "Suspendido", asig.getNombre());
+        }
+    }
+
+    private static void configurarColoresBarras(JFreeChart chart) {
+        CategoryPlot plot = chart.getCategoryPlot();
+        BarRenderer renderer = (BarRenderer) plot.getRenderer();
+        
+        // Colores por serie
+        renderer.setSeriesPaint(0, new java.awt.Color(0, 153, 76));  // Verde (Sob)
+        renderer.setSeriesPaint(1, new java.awt.Color(51, 153, 255)); // Azul (Not)
+        renderer.setSeriesPaint(2, new java.awt.Color(255, 204, 0));  // Ambar (Apr)
+        renderer.setSeriesPaint(3, new java.awt.Color(204, 0, 0));    // Rojo (Sus)
+        
+        // Mostrar etiquetas de valor sobre las barras
+        renderer.setDefaultItemLabelsVisible(true);
+        renderer.setDefaultItemLabelGenerator(new org.jfree.chart.labels.StandardCategoryItemLabelGenerator());
+        
+        // Configurar el eje Y para que muestre números enteros y empiece en 0
+        NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+        rangeAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+        rangeAxis.setAutoRangeIncludesZero(true);
+        
+        // Ajustar el margen entre las barras de las asignaturas
+        renderer.setItemMargin(0.1);
+        
+        // Fondo más limpio
+        plot.setBackgroundPaint(java.awt.Color.WHITE);
+        plot.setRangeGridlinePaint(java.awt.Color.LIGHT_GRAY);
+    }
+
+    private static void configurarColoresCircular(JFreeChart chart) {
+        if (chart.getPlot() instanceof MultiplePiePlot) {
+            MultiplePiePlot plot = (MultiplePiePlot) chart.getPlot();
+            JFreeChart subchart = plot.getPieChart();
+            PiePlot subplot = (PiePlot) subchart.getPlot();
+            subplot.setSectionPaint("Sobresaliente", new java.awt.Color(0, 153, 76));
+            subplot.setSectionPaint("Notable", new java.awt.Color(51, 153, 255));
+            subplot.setSectionPaint("Aprobado", new java.awt.Color(255, 204, 0));
+            subplot.setSectionPaint("Suspendido", new java.awt.Color(204, 0, 0));
         }
     }
 }
